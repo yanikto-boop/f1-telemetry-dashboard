@@ -4,11 +4,18 @@ import '../theme.dart';
 import '../appendices.dart';
 
 // Накопитель контура: bucket(lapDist) -> точка. Живёт в состоянии экрана.
+// Контур коммитим только по чистому кругу — съезды/развороты не портят карту.
 class TrackBuffer {
   static const bucket = 12.0;
-  final Map<int, Offset> byDist = {};
+  final Map<int, Offset> byDist = {};   // закоммиченный (чистый) контур
+  final Map<int, Offset> _scratch = {}; // текущий круг
   int trackLen = 4000;
   double minX = 0, maxX = 1, minZ = 0, maxZ = 1;
+
+  int? _prevLap;
+  bool _lapDirty = false;   // был ли инвалид/съезд на этом круге
+  bool _hasClean = false;   // есть ли хоть один закоммиченный чистый круг
+  Offset? _prevPt;
 
   void feed(GameState st) {
     final me = st.cars[st.safePlayerIndex];
@@ -16,8 +23,32 @@ class TrackBuffer {
     final d = me.lapDistance;
     if (d < 0) return;
     if (st.session.trackLength > 0) trackLen = st.session.trackLength;
-    byDist[(d / bucket).round()] = Offset(me.x!, me.z!);
-    _bounds();
+    final p = st.player;
+
+    // смена круга — коммитим предыдущий, если он был чистым
+    if (_prevLap != null && p.curLapNum != _prevLap) {
+      if (!_lapDirty && _scratch.length > 0.6 * (trackLen / bucket)) {
+        byDist..clear()..addAll(_scratch);
+        _hasClean = true;
+        _bounds();
+      }
+      _scratch.clear();
+      _lapDirty = false;
+      _prevPt = null;
+    }
+    _prevLap = p.curLapNum;
+
+    if (p.lapInvalid == 1) _lapDirty = true;
+
+    final pt = Offset(me.x!, me.z!);
+    // фильтр телепортов/спинов: резкий скачок позиции = грязный круг
+    if (_prevPt != null && (pt - _prevPt!).distance > 60) _lapDirty = true;
+    _prevPt = pt;
+
+    final b = (d / bucket).round();
+    _scratch[b] = pt;
+    // пока нет чистого контура — показываем текущий круг «вживую»
+    if (!_hasClean) { byDist[b] = pt; _bounds(); }
   }
 
   void _bounds() {

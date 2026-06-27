@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../appendices.dart';
 import '../game_state.dart';
+import '../pace.dart';
 import '../theme.dart';
 import '../udp_service.dart';
 import '../widgets/track_map.dart';
@@ -15,6 +16,7 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   final _buf = TrackBuffer();
+  final _pace = PaceTracker();
 
   @override
   Widget build(BuildContext context) {
@@ -23,6 +25,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       builder: (context, _) {
         final st = widget.service.state;
         _buf.feed(st);
+        _pace.feed(st);
         return ListView(
           padding: const EdgeInsets.all(12),
           children: [
@@ -228,11 +231,30 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _sectorBox('S3', 0, p.sector == 2 ? 1 : 0),
       ]),
       const SizedBox(height: 8),
+      if (_pace.liveDeltaMs != null) _deltaBanner(_pace.liveDeltaMs!),
       row('LAST', fmtLap(p.lastLapMs)),
       row('BEST', fmtLap(best), C.accent2),
+      if (_pace.idealMs > 0)
+        row('ИДЕАЛ', fmtLap(_pace.idealMs), C.yellow),
       row('Δ LEADER', p.deltaLeaderMs > 0 ? '+${(p.deltaLeaderMs/1000).toStringAsFixed(3)}' : '—'),
       row('Δ FRONT', p.deltaFrontMs > 0 ? '+${(p.deltaFrontMs/1000).toStringAsFixed(3)}' : '—'),
     ]));
+  }
+
+  // live-дельта к лучшему кругу — зелёный быстрее, красный медленнее
+  Widget _deltaBanner(int ms) {
+    final faster = ms < 0;
+    final col = faster ? C.green : C.red;
+    final s = '${faster ? '−' : '+'}${(ms.abs() / 1000).toStringAsFixed(3)}';
+    return Container(
+      width: double.infinity, margin: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      decoration: BoxDecoration(
+        color: col.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: col)),
+      child: Center(child: Text('Δ BEST  $s',
+        style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: col))),
+    );
   }
 
   Widget _sectorBox(String l, int ms, int state) {
@@ -321,8 +343,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _leaderboard(GameState st) {
+    // Time Trial: позиций нет, есть ты + гост(ы) — отдельная раскладка
+    if (st.session.sessionType == 18) return _timeTrialBoard(st);
     final cars = st.cars.asMap().entries
-        .where((e) => e.value.position > 0 && e.value.resultStatus != 1)
+        .where((e) => e.value.active && e.value.position > 0 && e.value.resultStatus != 1)
         .toList()
       ..sort((a, b) => a.value.position.compareTo(b.value.position));
     final top = cars.take(12).toList();
@@ -355,6 +379,50 @@ class _DashboardScreenState extends State<DashboardScreen> {
         );
       }),
       if (top.isEmpty) const Text('—', style: TextStyle(color: C.muted)),
+    ]));
+  }
+
+  // Time Trial — ты и гост(ы) с лучшим временем, без позиций
+  Widget _timeTrialBoard(GameState st) {
+    int bestOf(int idx) {
+      final h = st.history[idx];
+      final v = (h ?? const <int>[]).where((e) => e > 0 && e < 600000);
+      if (v.isNotEmpty) return v.reduce((a, b) => a < b ? a : b);
+      return st.cars[idx].lastLapMs;
+    }
+    final rows = st.cars.asMap().entries
+        .where((e) => e.value.active && e.value.name.isNotEmpty)
+        .map((e) => (idx: e.key, car: e.value, best: bestOf(e.key)))
+        .where((r) => r.best > 0)
+        .toList()
+      ..sort((a, b) => a.best.compareTo(b.best));
+    final leader = rows.isEmpty ? 0 : rows.first.best;
+    return _card(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      cardTitle('TIME TRIAL'),
+      if (rows.isEmpty) const Text('Проедь круг — появятся времена', style: TextStyle(color: C.muted)),
+      ...rows.map((r) {
+        final me = r.idx == st.safePlayerIndex;
+        final gap = r.best - leader;
+        return Container(
+          margin: const EdgeInsets.only(bottom: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: me ? C.accent2.withValues(alpha: 0.08) : const Color(0xFF161C27),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: me ? C.accent2 : Colors.transparent)),
+          child: Row(children: [
+            Expanded(child: Text(me ? '${r.car.name} (ты)' : r.car.name,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontWeight: FontWeight.w600, color: me ? C.accent2 : C.txt))),
+            Text(fmtLap(r.best), style: const TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(width: 10),
+            SizedBox(width: 64, child: Text(
+              gap == 0 ? 'BEST' : '+${(gap/1000).toStringAsFixed(3)}',
+              textAlign: TextAlign.right,
+              style: TextStyle(color: gap == 0 ? C.accent2 : C.muted, fontSize: 13))),
+          ]),
+        );
+      }),
     ]));
   }
 
