@@ -202,7 +202,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     int best = 0;
     final h = st.history[st.safePlayerIndex];
     if (h != null && h.isNotEmpty) {
-      final valid = h.where((e) => e > 0);
+      // отбрасываем мусорные значения (10 мин = заведомо не круг)
+      final valid = h.where((e) => e > 0 && e < 600000);
       if (valid.isNotEmpty) best = valid.reduce((a, b) => a < b ? a : b);
     }
     return _card(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -219,11 +220,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ]),
       const SizedBox(height: 8),
       Row(children: [
-        _sectorBox('S1', p.s1, p.sector >= 1),
+        // 0 = ещё не доехал, 1 = едет сейчас (жёлтый), 2 = закрыт (зелёный)
+        _sectorBox('S1', p.s1, p.s1 > 0 ? 2 : (p.sector == 0 ? 1 : 0)),
         const SizedBox(width: 6),
-        _sectorBox('S2', p.s2, p.sector >= 2),
+        _sectorBox('S2', p.s2, p.s2 > 0 ? 2 : (p.sector == 1 ? 1 : 0)),
         const SizedBox(width: 6),
-        _sectorBox('S3', 0, false),
+        _sectorBox('S3', 0, p.sector == 2 ? 1 : 0),
       ]),
       const SizedBox(height: 8),
       row('LAST', fmtLap(p.lastLapMs)),
@@ -233,16 +235,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
     ]));
   }
 
-  Widget _sectorBox(String l, int ms, bool done) {
+  Widget _sectorBox(String l, int ms, int state) {
+    // state: 0 — впереди, 1 — текущий сектор (жёлтый), 2 — закрыт (зелёный)
+    final accent = state == 2 ? C.green : (state == 1 ? C.yellow : C.line);
     return Expanded(child: Container(
       padding: const EdgeInsets.symmetric(vertical: 8),
       decoration: BoxDecoration(
-        color: done ? C.green.withValues(alpha: 0.12) : const Color(0xFF161C27),
+        color: state == 0 ? const Color(0xFF161C27) : accent.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(9),
-        border: Border.all(color: done ? C.green : C.line)),
+        border: Border.all(color: accent)),
       child: Column(children: [
         Text(l, style: const TextStyle(fontSize: 11, color: C.muted)),
-        Text(fmtSec(ms), style: const TextStyle(fontWeight: FontWeight.bold)),
+        Text(ms > 0 ? fmtSec(ms) : (state == 1 ? '…' : '--.---'),
+          style: const TextStyle(fontWeight: FontWeight.bold)),
       ]),
     ));
   }

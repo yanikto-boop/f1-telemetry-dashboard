@@ -141,7 +141,10 @@ class _TrackLapsScreenState extends State<TrackLapsScreen> {
           itemBuilder: (context, i) {
             final l = _laps[_laps.length - 1 - i]; // новые сверху
             final isBest = l.timeMs == _best && l.valid;
-            return Container(
+            return InkWell(
+              borderRadius: BorderRadius.circular(9),
+              onTap: () => _showLapDetail(l, isBest),
+              child: Container(
               margin: const EdgeInsets.only(bottom: 6),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
@@ -163,10 +166,48 @@ class _TrackLapsScreenState extends State<TrackLapsScreen> {
                 Text(l.compound.isNotEmpty ? l.compound[0] : '',
                   style: const TextStyle(fontWeight: FontWeight.bold)),
               ]),
-            );
+            ));
           },
         )),
       ]),
+    );
+  }
+
+  void _showLapDetail(LapRecord l, bool isBest) {
+    Widget kv(String k, String v, [Color? c]) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+        Text(k, style: const TextStyle(color: C.muted, fontSize: 14)),
+        Text(v, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: c)),
+      ]),
+    );
+    showModalBottomSheet(
+      context: context, backgroundColor: C.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Row(children: [
+            Text('Круг ${l.lap}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            const SizedBox(width: 10),
+            if (isBest) const Text('★ лучший', style: TextStyle(color: C.accent2, fontWeight: FontWeight.bold)),
+            const Spacer(),
+            if (!l.valid) const Text('НЕВАЛИДНЫЙ', style: TextStyle(color: C.red, fontWeight: FontWeight.bold, fontSize: 12)),
+          ]),
+          const SizedBox(height: 14),
+          kv('Время круга', fmtLap(l.timeMs), isBest ? C.accent2 : C.txt),
+          kv('Сектор 1', l.s1 > 0 ? fmtSec(l.s1) : '—'),
+          kv('Сектор 2', l.s2 > 0 ? fmtSec(l.s2) : '—'),
+          kv('Сектор 3', l.s3 > 0 ? fmtSec(l.s3) : '—'),
+          const Divider(color: C.line, height: 24),
+          kv('Шины', l.compound),
+          kv('Возраст шин', '${l.tyreAge} кр.'),
+          kv('Сессия', l.session),
+          kv('Валидный', l.valid ? 'да' : 'нет'),
+          kv('Записан', l.ts.replaceFirst('T', ' ')),
+        ]),
+      ),
     );
   }
 
