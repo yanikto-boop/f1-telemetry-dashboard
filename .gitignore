@@ -46,3 +46,4 @@ app.*.map.json
 
 # Локальные секреты (ключ OpenRouter)
 lib/secrets.dart
+*.apk
